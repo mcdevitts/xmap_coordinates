@@ -4,8 +4,7 @@ import numpy as np
 import xarray as xr
 from scipy.interpolate import interp1d
 from scipy.ndimage import map_coordinates
-
-from .utils import dict_equal
+from utils import dict_equal
 
 __all__ = ("xmap_coordinates",)
 
