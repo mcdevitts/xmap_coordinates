@@ -19,4 +19,4 @@ setuptools = "<60.0.0"
 parameterized = "*"
 
 [requires]
-python_version = "3.7"
+python_version = "3.11"
