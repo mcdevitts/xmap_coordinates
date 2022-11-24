@@ -9,6 +9,16 @@ from utils import dict_equal
 __all__ = ("xmap_coordinates",)
 
 
+
+def create_output_da():
+    pass
+
+def check_structure():
+    pass
+
+def coords2pixels():
+    pass
+
 def xmap_coordinates(
     da: xr.DataArray, da_output: Optional[xr.DataArray] = None, kwargs_map=None, **coords_kwargs
 ) -> xr.DataArray:
