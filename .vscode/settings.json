@@ -1,0 +1,32 @@
+{
+    "git.ignoreMissingGitWarning": true,
+    "editor.rulers": [
+        {
+            "color": "#bd2f2f",
+            "column": 120
+        },
+        {
+            "color": "#c4550c",
+            "column": 80
+        }
+    ],
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true
+    },
+    "editor.formatOnSave": true,
+    "python.linting.flake8Enabled": true,
+    "python.linting.enabled": true,
+    "python.formatting.provider": "black",
+    "files.trimTrailingWhitespace": true,
+    "files.eol": "\n",
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./tests",
+        "-p",
+        "test_*.py"
+    ],
+    "python.testing.pytestEnabled": true,
+    "python.testing.nosetestsEnabled": false,
+    "python.testing.unittestEnabled": false
+}

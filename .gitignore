@@ -1,0 +1,44 @@
+# Distribution / packaging
+.Python
+env/
+venv/
+build/
+.venv*/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+.history
+
+# PyCharm
+.idea/
+
+# Unit test / coverage reports
+cov_html/
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*,cover
+.hypothesis/
+.pytest_cache/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Editable Installs
+.eggs/
+*.egg-info/

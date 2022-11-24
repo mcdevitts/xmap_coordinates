@@ -1,0 +1,22 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+xmap_coordinates = { editable = true, path = "."}
+
+[dev-packages]
+bump2version = "*"
+wheel = "*"
+black = "*"
+coverage = "*"
+pytest = "*"
+pytest-cov = "*"
+flake8 = "*"
+ipykernel = "*"
+setuptools = "<60.0.0"
+parameterized = "*"
+
+[requires]
+python_version = "3.7"
