@@ -1,5 +1,21 @@
 import numpy as np
 import xarray as xr
+from typing import Union
+
+
+__all__ = (
+    "da_atleast1d",
+    "dict_equal",
+)
+
+
+def da_atleast1d(x: Union[float, np.ndarray, xr.DataArray], name: str) -> xr.DataArray:
+    """Convert a float or 1D ndarray to an xarray whose coordinates are the same values as the data."""
+    if isinstance(x, xr.DataArray):
+        return x
+    else:
+        x = np.atleast_1d(x)
+        return xr.DataArray(x, coords={name: x}, dims=(name,))
 
 
 def dict_equal(a: dict, b: dict) -> bool:
