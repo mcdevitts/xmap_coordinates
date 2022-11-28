@@ -1,10 +1,11 @@
-from typing import Optional
+from typing import Dict, Optional
 
 import numpy as np
 import xarray as xr
 from scipy.interpolate import interp1d
 from scipy.ndimage import map_coordinates
-from .utils import dict_equal, da_atleast1d
+
+from .utils import da_atleast1d, dict_equal
 
 __all__ = ("xmap_coordinates", "XmapCoordinates")
 
@@ -21,8 +22,55 @@ class XmapCoordinates:
         self._obj = xarray_obj
         self._center = None
 
+    def _cleanse(self, **coords) -> Dict[str, xr.DataArray]:
+        """Cast incoming coords to n-dimensional xarrays where n is the length
+        of `coords`.
+        """
+
+        cleaned = {}
+
+        # Loop through all coordinates and:
+        #   - Cast to meshgrided DataArrays
+        #   - Reorder coords to match order of self._obj
+        #   - Reorder the underlying coordinates of coords (sorry) to match self._obj
+        #   - Strip unnecessary information from coords DataArrays
+        for k in self._obj.dims:
+            if k in coords.keys():
+                if not isinstance(coords[k], xr.DataArray):
+                    cleaned[k] = da_atleast1d(coords[k], k)
+                    if coords[k].ndim != 1:
+                        raise ValueError("ndarrays must have ndim==1")
+                else:
+                    # Strip breadcrumb coordinates
+                    cleaned[k] = coords[k].reset_coords(drop=True)
+
+        # Ensure all entries have the same shape
+        initial = list(cleaned.values())[0]
+        assert all([v.ndim == initial.ndim for v in list(cleaned.values())])
+        # TODO: Ensure all N-D arrays have the same coordinates
+
+        # Broadcast arrays if arrays are not already meshgrids
+        if initial.ndim == 1:
+            m_cleaned = xr.broadcast(*cleaned.values())
+            for ii, k in enumerate(cleaned):
+                cleaned[k] = m_cleaned[ii]
+
+        # TODO: Do we need xarrays or could we live with ndarrays?
+
+        return cleaned
+
     def _create_output(self, **coords) -> xr.DataArray:
-        pass
+        """Create output DataArray given the interpolation coordinates `coords`."""
+        initial = list(coords.keys())[0]
+        shape_interp = coords[initial].shape
+
+        other_dims = list(set(self._obj.dims).difference(coords.keys()))
+        other_coods = {self._obj.coords[k] for k in other_dims}
+        end_shape = [self._obj.shape[self._obj.dims.index(k)] for k in other_dims] + shape_interp
+        end_coords = {**other_coods, **coords}
+
+        da_output = xr.DataArray(np.zeros(end_shape), coords=end_coords, dims=other_dims + coords.keys())
+        return da_output
 
     def interp(
         self, output: Optional[xr.DataArray] = None, kwargs_map: Optional[dict] = None, **coords
@@ -34,36 +82,8 @@ class XmapCoordinates:
 
         return output
 
-    def _coords2pixels(self, **coords) -> dict:
+    def _coords2pixels(self, **coords) -> Dict[str, xr.DataArray]:
         pass
-
-    def _validate(self, **coords) -> bool:
-
-        shape_result = []
-        coords_result = {}
-
-        for k in self._obj.dims:
-            if k in coords.keys():
-                if not isinstance(coords[k], xr.DataArray):
-                    coords[k] = da_atleast1d(coords[k], k)
-                    if coords[k].ndim != 1:
-                        raise ValueError("ndarrays must have a dimension equal to 1")
-                else:
-                    # Strip breadcrumb coordinates
-                    coords[k] = coords[k].reset_coords(drop=True)
-
-                idx = coords[k].dims.index(k)
-                shape_result.append(coords[k].shape[idx])
-                coords_result[k] = coords[k][k]
-
-                # idx = coords_kwargs[k].dims.index(k)
-                # shape_result.append(coords_kwargs[k].shape[idx])
-                # coords_result[k] = coords_kwargs[k][k]
-
-        print(shape_result)
-        print(coords_result)
-
-        return True
 
 
 def xmap_coordinates(

@@ -1,6 +1,8 @@
 import unittest
-import xarray as xr
+
 import numpy as np
+import xarray as xr
+
 import xmap_coordinates
 
 
@@ -21,13 +23,22 @@ class TestValidate(unittest.TestCase):
 
         return super().setUp()
 
-    def test_validate(self):
+    def test_cleanse_ndarray_1d(self):
+        pass
+
+    def test_cleanse_ndarray_nd(self):
+        pass
+
+    def test_cleanse_xarray_1d(self):
         x = da_atleast1d(np.arange(10), "x")
         y = da_atleast1d(np.arange(6), "y")
-        m_xy = xr.broadcast(x, y)
-        d_xy = dict(x=m_xy[0], y=m_xy[1])
+        # m_xy = xr.broadcast(x, y)
+        # d_xy = dict(x=m_xy[0], y=m_xy[1])
         # self.da.xmap._validate(x=x, y=y)
-        self.da.xmap._validate(**d_xy)
+        self.da.xmap._cleanse(x=x, y=y)
+
+    def test_cleanse_xarray_nd(self):
+        pass
 
 
 if __name__ == "__main__":
