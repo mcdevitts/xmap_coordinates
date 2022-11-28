@@ -7,7 +7,7 @@ import xmap_coordinates  # noqa: F401
 from xmap_coordinates.utils import da_atleast1d
 
 
-class TestValidate(unittest.TestCase):
+class TestCleanse(unittest.TestCase):
     def setUp(self) -> None:
         self.da = xr.DataArray(
             np.zeros((3, 2, 2)), coords={"x": np.arange(3), "y": np.arange(2), "z": np.arange(2)}, dims=("x", "y", "z")
