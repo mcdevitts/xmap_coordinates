@@ -26,7 +26,16 @@ class XmapCoordinates:
         self.output_dims = tuple()
         self.output_coords = {}
 
+        #
         self.interp_dims = tuple()
+
+        # Information for extra (non-interpolating) dimensions
+        self.other_dims = tuple()
+        self.other_coords = {}
+
+        # dims and shape of interpolation coordinates arranged in an order that matches self._obj
+        self.coords_dims = tuple()
+        self.coords_shape = tuple()
 
     def _cleanse(self, **coords: Dict[str, Union[xr.DataArray, npt.ArrayLike]]) -> Dict[str, xr.DataArray]:
         """Cast incoming coords to multi-dimensional xarrays.
@@ -40,16 +49,15 @@ class XmapCoordinates:
         """
 
         cleaned = {}
-        for k in self._obj.dims:
-            if k in coords.keys():
-                if not isinstance(coords[k], xr.DataArray):
-                    try:
-                        cleaned[k] = da_atleast1d(coords[k], k)
-                    except ValueError:
-                        raise ValueError("ndarrays must have ndim==1")
-                else:
-                    # Strip breadcrumb coordinates
-                    cleaned[k] = coords[k].reset_coords(drop=True)
+        for k in self.coords_dims:
+            if not isinstance(coords[k], xr.DataArray):
+                try:
+                    cleaned[k] = da_atleast1d(coords[k], k)
+                except ValueError:
+                    raise ValueError("ndarrays must have ndim==1")
+            else:
+                # Strip breadcrumb coordinates
+                cleaned[k] = coords[k].transpose(*self.coords_dims).reset_coords(drop=True)
 
         # Ensure all entries have the same shape
         initial = list(cleaned.values())[0]
@@ -63,8 +71,67 @@ class XmapCoordinates:
                 cleaned[k] = m_cleaned[ii]
 
         # TODO: Do we need xarrays or could we live with ndarrays?
-
         return cleaned
+
+    @staticmethod
+    def pixelate(x: xr.DataArray, y: xr.DataArray) -> xr.DataArray:
+        # Dimensions where the underlying unitary coordinates are a special case. They do not need to be
+        # interpolated.
+        if x.shape == (1,):
+            return xr.DataArray(
+                np.zeros(y.shape),
+                coords=y.coords,
+                dims=(list(y.dims)),
+            )
+        else:
+            # coordinates are n-dimensional. Because of this, the coordinates must be stacked, interpolated to
+            # the pixel map and then unstacked.
+            coord = np.ravel(y)
+            f_interp = interp1d(
+                # da coordinates may be N-D, so we have to grab the 1D vector that describes the N-D coordinate
+                np.atleast_1d(x),
+                np.arange(0, len(x), 1),
+                kind="linear",
+                fill_value="extrapolate",
+            )
+            return xr.DataArray(
+                np.reshape(f_interp(coord), y.shape),
+                coords=y.coords,
+                dims=list(y.dims),
+            )
+
+    def _coords2pixels(self, **coords: Dict[str, xr.DataArray]) -> Dict[str, xr.DataArray]:
+        """ """
+        # Scale interpolation vectors to coordinates
+        # At this point, all coordinates are xarrays, so we can interpolate using xarray's interp function
+        coords_pixel = {}
+        for k in self._obj.dims:
+            if k in coords:
+                # Dimensions where the underlying unitary coordinates are a special case. They do not need to be
+                # interpolated.
+                if self._obj.coords[k].shape == (1,):
+                    coords_pixel[k] = xr.DataArray(
+                        np.zeros(coords[k].shape),
+                        coords=coords[k].coords,
+                        dims=(list(coords[k].dims)),
+                    )
+                else:
+                    # coordinates are n-dimensional. Because of this, the coordinates must be stacked, interpolated to
+                    # the pixel map and then unstacked.
+                    coord = np.ravel(coords[k])
+                    f_interp = interp1d(
+                        # da coordinates may be N-D, so we have to grab the 1D vector that describes the N-D coordinate
+                        np.atleast_1d(self._obj.coords[k]),
+                        np.arange(0, len(self._obj.coords[k]), 1),
+                        kind="linear",
+                        fill_value="extrapolate",
+                    )
+                    coords_pixel[k] = xr.DataArray(
+                        np.reshape(f_interp(coord), coords[k].shape),
+                        coords=coords[k].coords,
+                        dims=list(coords[k].dims),
+                    )
+        return coords_pixel
 
     def _create_output(self, **coords: Dict[str, xr.DataArray]) -> xr.DataArray:
         """Create output DataArray given the interpolation coordinates `coords`.
@@ -72,23 +139,19 @@ class XmapCoordinates:
         The DataArrays within `coords` are meshgrids of the interpolation variables.
         """
         initial = list(coords.keys())[0]
-        shape_interp = coords[initial].shape
-
-        # Find non-interpolation dimensions and coordinates
-        other_dims = tuple(set(self._obj.dims).difference(coords.keys()))
-        other_coords = {k: self._obj.coords[k] for k in other_dims}
+        self.coords_shape = coords[initial].shape
 
         # Since interpolation vectors (i.e. coords) can have different top-level dimensions than self._obj, we need
         # to use the dimensions from coords for the interpolation dimensions. And, due to coords being meshgrids, we
         # need to use the underlying coordinates.
-        self.output_dims = other_dims + tuple(coords[initial].coords.keys())
-        self.output_coords = {**other_coords, **coords[initial].coords}
+        self.output_dims = self.other_dims + tuple(coords[initial].coords.keys())
+        self.output_coords = {**self.other_coords, **coords[initial].coords}
 
         # It is also handy to keep track of the same coordinates and dims but in reference to the data itself. This
         # will allow us to transpose the data prior to interpolation
-        self.interp_dims = other_dims + tuple(coords.keys())
+        self.interp_dims = self.other_dims + tuple(coords.keys())
 
-        output_shape = tuple(self._obj.shape[self._obj.dims.index(k)] for k in other_dims) + shape_interp
+        output_shape = tuple(self._obj.shape[self._obj.dims.index(k)] for k in self.other_dims) + self.coords_shape
         da_output = xr.DataArray(np.zeros(output_shape), coords=self.output_coords, dims=self.output_dims)
         return da_output
 
@@ -96,14 +159,57 @@ class XmapCoordinates:
         self, output: Optional[xr.DataArray] = None, kwargs_map: Optional[dict] = None, **coords
     ) -> xr.DataArray:
 
+        # Default arguments for map_coordinates
         default_map = dict(order=3, mode="nearest", prefilter=True)
         kwargs_map = {} if kwargs_map is None else kwargs_map
         kwargs_map = {**default_map, **kwargs_map}
 
-        return output
+        # TODO: Is there a better way to organize the dimensions, coordinates, and shape of the various groupings?
+        # Find interpolation dimensions in the order they appear in the data
+        self.coords_dims = tuple(x for x in self._obj.dims if x in coords.keys())
 
-    def _coords2pixels(self, **coords) -> Dict[str, xr.DataArray]:
-        pass
+        # Find non-interpolation dimensions and coordinates in the order they appear in the data
+        self.other_dims = tuple(x for x in self._obj.dims if x not in coords.keys())
+        self.other_coords = {k: self._obj.coords[k] for k in self.other_dims}
+
+        # Clean up the coordinates, and create meshgrids if they aren't already
+        coords = self._cleanse(**coords)
+
+        # Infer the output array from the input coordinates
+        da_output = self._create_output(**coords)
+
+        # map_coordinates works on pixel grid coordinates. Translate coordinates to pixel coordinates before
+        # interpolating
+        pixels = {k: self.pixelate(self._obj.coords[k], coords[k]) for k in self.coords_dims}
+        # pixels = self._coords2pixels(**coords)
+
+        mg_coords = [x.values.flatten() for x in list(pixels.values())]
+        pts = np.array(list(zip(*mg_coords))).T
+
+        # Reshape dataarray so that we can loop over the dimensions that will not be interpolated
+        looped_dims = list(set(self._obj.dims).difference(pixels.keys()))
+
+        # TODO: Stacking seems to set a lower bound here. Look into replacing with numpy reshapes and see if things get
+        # faster
+        if looped_dims:
+            da_stacked = self._obj.stack(looped=looped_dims)
+        else:
+            # Support case where all of da's dimensions are present in coords_kwargs.
+            da_stacked = self._obj.expand_dims("looped", axis=-1)
+
+        da_result = da_output.stack(looped=looped_dims)
+        for ii in range(da_stacked.coords["looped"].size):
+            da_result.values[..., ii] = map_coordinates(
+                da_stacked[..., ii].values, pts, output=self._obj.dtype, **kwargs_map
+            ).reshape(self.coords_shape)
+
+        if looped_dims:
+            da_result = da_result.unstack().transpose(*da_output.dims)
+        else:
+            da_result = da_result.isel(looped=0, drop=True).transpose(*da_output.dims)
+
+        # da_result = da_result.assign_coords(**coords_result)
+        return da_result
 
 
 def xmap_coordinates(
@@ -146,152 +252,4 @@ def xmap_coordinates(
 
     """
 
-    # TODO: What to do about coordinates that are unsorted (both in the da and in the interpolation dimensions)
-    default_map = dict(order=3, mode="nearest", prefilter=True)
-    if kwargs_map is not None:
-        kwargs_map = {**default_map, **kwargs_map}
-    else:
-        kwargs_map = default_map
-
-    # Verify that all interpolation coordinates are present in the data to be interpolated
-    if not set(coords_kwargs.keys()).issubset(set(da.dims)):
-        raise ValueError(
-            "One or more interpolation coordinate is not a dimensions in the DataArray to be interpolated:\n"
-            f"Data Array dims: {list(da.dims)}\n"
-            f"Interpolation dims: {list(coords_kwargs.keys())}"
-        )
-
-    # TODO: Verify that all coordinates in `da` are only 1-D. `da` must be on a regular grid for any interpolation to
-    # make sense
-
-    # TODO: Enforce increasing coordinates
-    # np.all(np.diff(xp) > 0)
-
-    # The partial shape of `da` (ignoring the uninterpolated dims) and the corresponding vectors that
-    # describe the regular grid that `da` will be interpolated to
-    shape_result = []  # if da_output is None else da_output.shape
-    coords_result = {}  # if da_output is None else {k: v for k, v in zip(da_output.dims, da_output.coords.values())}
-    keys_result = []
-
-    # coords_xarray mapped to the pixel grid
-    coords_pixel = {}
-
-    # Meshgrid pixel coords
-    coords_meshed = {}
-
-    # TODO: If da_output is provided ensure it's coordinates line up with the underlying coordinates in coords_kwargs
-    if da_output is not None:
-        for ii, (k, v) in enumerate(coords_kwargs.items()):
-            # They must be xarrays
-            if not isinstance(v, xr.DataArray):
-                raise ValueError()
-            # The coordinates must be a subset of the output's dims
-            if not set(v.coords.keys()).issubset(da_output.dims):
-                raise ValueError("Impromperly formatted coordinates between interpolation coords and da_output.")
-            # The underlying coordinates must be the same!
-            if ii == 0:
-                keys_result = list(v.coords.dims)
-                shape_result = v.shape
-                coords_result = dict(v.coords)
-
-                # These must line up with the output shape's coords
-                for kk, vv in coords_result.items():
-                    assert np.all(da_output[kk] == vv)
-            else:
-                if not dict_equal(coords_result, dict(v.coords)):
-                    raise ValueError("Coords do not match!")
-
-    else:
-        # Convert all coordinates to xarrays and ascertain the shape of the resulting interpolated data
-        for k in da.dims:
-            if k in coords_kwargs.keys():
-                if not isinstance(coords_kwargs[k], xr.DataArray):
-                    coord = np.atleast_1d(coords_kwargs[k])
-                    if coord.ndim != 1:
-                        raise ValueError("ndarrays must have a dimension equal to 1")
-                    coords_kwargs[k] = xr.DataArray(coord, coords={k: coord}, dims=(k,))
-                else:
-                    # Strip breadcrumb coordinates
-                    coords_kwargs[k] = coords_kwargs[k].reset_coords(drop=True)
-
-                idx = coords_kwargs[k].dims.index(k)
-                shape_result.append(coords_kwargs[k].shape[idx])
-                coords_result[k] = coords_kwargs[k][k]
-
-    # Build the output array
-    if da_output is None:
-        other_dims = list(set(da.dims).difference(coords_kwargs.keys()))
-        other_coods = {da.coords[k] for k in other_dims}
-        end_shape = [da.shape[da.dims.index(k)] for k in other_dims] + shape_result
-        end_coords = {**other_coods, **coords_result}
-
-        da_output = xr.DataArray(np.zeros(end_shape), coords=end_coords, dims=other_dims + coords_result.keys())
-
-    # Scale interpolation vectors to coordinates
-    # At this point, all coordinates are xarrays, so we can interpolate using xarray's interp function
-    coords_pixel = {}
-    for k in da.dims:
-        if k in coords_kwargs:
-            # Dimensions where the underlying unitary coordinates are a special case. They do not need to be
-            # interpolated.
-            if da.coords[k].shape == (1,):
-                coords_pixel[k] = xr.DataArray(
-                    np.zeros(coords_kwargs[k].shape), coords=coords_kwargs[k].coords, dims=(list(coords_kwargs[k].dims))
-                )
-            else:
-                # coordinates may be N-D. Because of this, the coordinates must be stacked, interpolated to the pixel
-                # map and then unstacked.
-                # TODO: Stack only if coordinates are ND
-                coord = np.ravel(coords_kwargs[k])
-                f_interp = interp1d(
-                    # da coordinates may be N-D, so we have to grab the 1D vector that describes the N-D coordinate
-                    np.atleast_1d(da.coords[k]),
-                    np.arange(0, len(da.coords[k]), 1),
-                    kind="linear",
-                    fill_value="extrapolate",
-                )
-                coords_pixel[k] = xr.DataArray(
-                    np.reshape(f_interp(coord), coords_kwargs[k].shape),
-                    coords=coords_kwargs[k].coords,
-                    dims=list(coords_kwargs[k].dims),
-                )
-
-    # For any coordinate that is 1D, broadcast that coordinate to the N-D shape
-    # TODO: Is there a better way of doing this?
-    dummy = xr.DataArray(np.zeros(shape_result), coords=coords_result, dims=keys_result)
-    for k in da.dims:
-        if k in coords_pixel:
-            # This forces dimension order as well, so a transpose / reshape is unnecessary here.
-            coords_meshed[k] = coords_pixel[k].broadcast_like(dummy)
-
-    # TODO: idx_coords appears to be unused. Why?
-    # Flatten coordinates
-    # idx_coords = {}
-    interp_shape = dummy.shape
-    mg_coords = [x.values.flatten() for x in list(coords_meshed.values())]
-    pts = np.array(list(zip(*mg_coords))).T
-
-    # Reshape dataarray so that we can loop over the dimensions that will not be interpolated
-    looped_dims = list(set(da.dims).difference(coords_meshed.keys()))
-
-    # TODO: Stacking seems to set a lower bound here. Look into replacing with numpy reshapes and see if things get
-    # faster
-    if looped_dims:
-        da_stacked = da.stack(looped=looped_dims)
-    else:
-        # Support case where all of da's dimensions are present in coords_kwargs.
-        da_stacked = da.expand_dims("looped", axis=-1)
-
-    da_result = da_output.stack(looped=looped_dims)
-    for ii in range(da_stacked.coords["looped"].size):
-        da_result.values[..., ii] = map_coordinates(
-            da_stacked[..., ii].values, pts, output=da.dtype, **kwargs_map
-        ).reshape(interp_shape)
-
-    if looped_dims:
-        da_result = da_result.unstack().transpose(*da_output.dims)
-    else:
-        da_result = da_result.isel(looped=0, drop=True).transpose(*da_output.dims)
-
-    # da_result = da_result.assign_coords(**coords_result)
-    return da_result
+    pass
