@@ -23,6 +23,11 @@ class XmapCoordinates:
         self._obj = xarray_obj
         self._center = None
 
+        self.output_dims = tuple()
+        self.output_coords = {}
+
+        self.interp_dims = tuple()
+
     def _cleanse(self, **coords: Dict[str, Union[xr.DataArray, npt.ArrayLike]]) -> Dict[str, xr.DataArray]:
         """Cast incoming coords to multi-dimensional xarrays.
 
@@ -61,17 +66,30 @@ class XmapCoordinates:
 
         return cleaned
 
-    def _create_output(self, **coords) -> xr.DataArray:
-        """Create output DataArray given the interpolation coordinates `coords`."""
+    def _create_output(self, **coords: Dict[str, xr.DataArray]) -> xr.DataArray:
+        """Create output DataArray given the interpolation coordinates `coords`.
+
+        The DataArrays within `coords` are meshgrids of the interpolation variables.
+        """
         initial = list(coords.keys())[0]
         shape_interp = coords[initial].shape
 
-        other_dims = list(set(self._obj.dims).difference(coords.keys()))
-        other_coods = {self._obj.coords[k] for k in other_dims}
-        end_shape = [self._obj.shape[self._obj.dims.index(k)] for k in other_dims] + shape_interp
-        end_coords = {**other_coods, **coords}
+        # Find non-interpolation dimensions and coordinates
+        other_dims = tuple(set(self._obj.dims).difference(coords.keys()))
+        other_coords = {k: self._obj.coords[k] for k in other_dims}
 
-        da_output = xr.DataArray(np.zeros(end_shape), coords=end_coords, dims=other_dims + coords.keys())
+        # Since interpolation vectors (i.e. coords) can have different top-level dimensions than self._obj, we need
+        # to use the dimensions from coords for the interpolation dimensions. And, due to coords being meshgrids, we
+        # need to use the underlying coordinates.
+        self.output_dims = other_dims + tuple(coords[initial].coords.keys())
+        self.output_coords = {**other_coords, **coords[initial].coords}
+
+        # It is also handy to keep track of the same coordinates and dims but in reference to the data itself. This
+        # will allow us to transpose the data prior to interpolation
+        self.interp_dims = other_dims + tuple(coords.keys())
+
+        output_shape = tuple(self._obj.shape[self._obj.dims.index(k)] for k in other_dims) + shape_interp
+        da_output = xr.DataArray(np.zeros(output_shape), coords=self.output_coords, dims=self.output_dims)
         return da_output
 
     def interp(
