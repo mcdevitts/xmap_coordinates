@@ -1,6 +1,7 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 import numpy as np
+import numpy.typing as npt
 import xarray as xr
 from scipy.interpolate import interp1d
 from scipy.ndimage import map_coordinates
@@ -22,23 +23,24 @@ class XmapCoordinates:
         self._obj = xarray_obj
         self._center = None
 
-    def _cleanse(self, **coords) -> Dict[str, xr.DataArray]:
-        """Cast incoming coords to n-dimensional xarrays where n is the length
-        of `coords`.
+    def _cleanse(self, **coords: Dict[str, Union[xr.DataArray, npt.ArrayLike]]) -> Dict[str, xr.DataArray]:
+        """Cast incoming coords to multi-dimensional xarrays.
+
+        Given N `coords`, N N-dimensional xarrays will be created with the coords and dims corresponding to the keys
+        and values of `coords`. This method will also clean up passed ndarrays or xarrays:
+        - Cast to meshgrided DataArrays
+        - Reorder coords to match order of `self._obj`
+        - Reorder the underlying coordinates of coords (sorry) to match `self._obj`
+        - Strip unnecessary information from coords DataArrays
         """
 
         cleaned = {}
-
-        # Loop through all coordinates and:
-        #   - Cast to meshgrided DataArrays
-        #   - Reorder coords to match order of self._obj
-        #   - Reorder the underlying coordinates of coords (sorry) to match self._obj
-        #   - Strip unnecessary information from coords DataArrays
         for k in self._obj.dims:
             if k in coords.keys():
                 if not isinstance(coords[k], xr.DataArray):
-                    cleaned[k] = da_atleast1d(coords[k], k)
-                    if coords[k].ndim != 1:
+                    try:
+                        cleaned[k] = da_atleast1d(coords[k], k)
+                    except ValueError:
                         raise ValueError("ndarrays must have ndim==1")
                 else:
                     # Strip breadcrumb coordinates
