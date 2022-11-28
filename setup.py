@@ -5,7 +5,7 @@ from setuptools import setup
 
 setup(
     name="xmap_coordinates",
-    version="0.0.1",
+    version="0.1.0",
     description="",
     long_description="",
     author="",
@@ -19,13 +19,12 @@ setup(
         "xarray",
         "scipy",
     ),
-    keywords="xrpattern",
+    keywords="xmap_coordiantes",
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Developers",
         "Natural Language :: English",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
     ],
 )
