@@ -73,39 +73,6 @@ class XmapCoordinates:
         # TODO: Do we need xarrays or could we live with ndarrays?
         return cleaned
 
-    def _coords2pixels(self, **coords: Dict[str, xr.DataArray]) -> Dict[str, xr.DataArray]:
-        """ """
-        # Scale interpolation vectors to coordinates
-        # At this point, all coordinates are xarrays, so we can interpolate using xarray's interp function
-        coords_pixel = {}
-        for k in self._obj.dims:
-            if k in coords:
-                # Dimensions where the underlying unitary coordinates are a special case. They do not need to be
-                # interpolated.
-                if self._obj.coords[k].shape == (1,):
-                    coords_pixel[k] = xr.DataArray(
-                        np.zeros(coords[k].shape),
-                        coords=coords[k].coords,
-                        dims=(list(coords[k].dims)),
-                    )
-                else:
-                    # coordinates are n-dimensional. Because of this, the coordinates must be stacked, interpolated to
-                    # the pixel map and then unstacked.
-                    coord = np.ravel(coords[k])
-                    f_interp = interp1d(
-                        # da coordinates may be N-D, so we have to grab the 1D vector that describes the N-D coordinate
-                        np.atleast_1d(self._obj.coords[k]),
-                        np.arange(0, len(self._obj.coords[k]), 1),
-                        kind="linear",
-                        fill_value="extrapolate",
-                    )
-                    coords_pixel[k] = xr.DataArray(
-                        np.reshape(f_interp(coord), coords[k].shape),
-                        coords=coords[k].coords,
-                        dims=list(coords[k].dims),
-                    )
-        return coords_pixel
-
     def _create_output(self, **coords: Dict[str, xr.DataArray]) -> xr.DataArray:
         """Create output DataArray given the interpolation coordinates `coords`.
 
@@ -130,6 +97,7 @@ class XmapCoordinates:
 
     @staticmethod
     def _pixelate(x: xr.DataArray, y: xr.DataArray, xarray: bool = False) -> Union[xr.DataArray, np.ndarray]:
+        """ """
         # Dimensions where the underlying unitary coordinates are a special case. They do not need to be
         # interpolated.
         if x.shape == (1,):
