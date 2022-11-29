@@ -6,15 +6,9 @@ import xarray as xr
 from scipy.interpolate import interp1d
 from scipy.ndimage import map_coordinates
 
-from .utils import da_atleast1d, dict_equal
+from .utils import da_atleast1d
 
 __all__ = ("xmap_coordinates", "XmapCoordinates")
-
-"""
-Current implementation only allows N-D arrays if an output DataArray is provided. Otherwise, the coords must be 1D.
-How do we want to handle this going forward?
-
-"""
 
 
 @xr.register_dataarray_accessor("xmap")
@@ -37,6 +31,8 @@ class XmapCoordinates:
         self.coords_dims = tuple()
         self.coords_shape = tuple()
 
+        self.coords_underlying_dims = tuple()
+
     def _cleanse(self, **coords: Dict[str, Union[xr.DataArray, npt.ArrayLike]]) -> Dict[str, xr.DataArray]:
         """Cast incoming coords to multi-dimensional xarrays.
 
@@ -48,6 +44,14 @@ class XmapCoordinates:
         - Strip unnecessary information from coords DataArrays
         """
 
+        # TODO: Is there a better way to organize the dimensions, coordinates, and shape of the various groupings?
+        # Find interpolation dimensions in the order they appear in the data
+        self.coords_dims = tuple(x for x in self._obj.dims if x in coords.keys())
+
+        # Find non-interpolation dimensions and coordinates in the order they appear in the data
+        self.other_dims = tuple(x for x in self._obj.dims if x not in coords.keys())
+        self.other_coords = {k: self._obj.coords[k] for k in self.other_dims}
+
         cleaned = {}
         for k in self.coords_dims:
             if not isinstance(coords[k], xr.DataArray):
@@ -56,8 +60,19 @@ class XmapCoordinates:
                 except ValueError:
                     raise ValueError("ndarrays must have ndim==1")
             else:
-                # Strip breadcrumb coordinates
-                cleaned[k] = coords[k].transpose(*self.coords_dims).reset_coords(drop=True)
+                # Strip breadcrumb coordinates and reorganize meshgrid coordinates
+                if len(coords[k].dims) > 1:
+                    try:
+                        cleaned[k] = coords[k].reset_coords(drop=True).transpose(*self.coords_dims)
+                    except ValueError:
+                        # If the coordinates have different underlying coordinates, this will not work. It's the users
+                        # responsiblity to ensure they are correctly ordered.
+                        # We can ensure they're all the same though.
+                        if not self.coords_underlying_dims:
+                            self.coords_underlying_dims = coords[k].dims
+                        cleaned[k] = coords[k].reset_coords(drop=True).transpose(*self.coords_underlying_dims)
+                else:
+                    cleaned[k] = coords[k].reset_coords(drop=True)
 
         # Ensure all entries have the same shape
         initial = list(cleaned.values())[0]
@@ -127,14 +142,6 @@ class XmapCoordinates:
         kwargs_map = {} if kwargs_map is None else kwargs_map
         kwargs_map = {**default_map, **kwargs_map}
 
-        # TODO: Is there a better way to organize the dimensions, coordinates, and shape of the various groupings?
-        # Find interpolation dimensions in the order they appear in the data
-        self.coords_dims = tuple(x for x in self._obj.dims if x in coords.keys())
-
-        # Find non-interpolation dimensions and coordinates in the order they appear in the data
-        self.other_dims = tuple(x for x in self._obj.dims if x not in coords.keys())
-        self.other_coords = {k: self._obj.coords[k] for k in self.other_dims}
-
         # Clean up the coordinates, and create meshgrids if they aren't already
         coords = self._cleanse(**coords)
 
@@ -172,7 +179,20 @@ class XmapCoordinates:
         else:
             da_result = da_result.isel(looped=0, drop=True).transpose(*da_output.dims)
 
-        # TODO: Reshape da_output back to shape that is coherent with the order of self._obj
+        # Reshape da_output back to shape that is coherent with the order of self._obj
+        try:
+            da_result = da_result.transpose(*self._obj.dims)
+        except ValueError:
+            # Transpose using underlying coordinates. Need to build those.
+            ii = 0
+            dims = []
+            for x in self._obj.dims:
+                if x in self.coords_dims:
+                    dims.append(self.coords_underlying_dims[ii])
+                    ii += 1
+                else:
+                    dims.append(x)
+            da_result = da_result.transpose(*dims)
 
         return da_result
 
