@@ -8,7 +8,7 @@ from scipy.ndimage import map_coordinates
 
 from .utils import da_atleast1d
 
-__all__ = ("xmap_coordinates", "XmapCoordinates")
+__all__ = ("XmapCoordinates",)
 
 
 @xr.register_dataarray_accessor("xmap")
