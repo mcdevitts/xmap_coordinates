@@ -134,8 +134,42 @@ class XmapCoordinates:
         return pixels
 
     def interp(
-        self, output: Optional[xr.DataArray] = None, kwargs_map: Optional[dict] = None, **coords
+        self, kwargs_map: Optional[dict] = None, **coords: Dict[str, Union[xr.DataArray, npt.ArrayLike]]
     ) -> xr.DataArray:
+        """Generic interpolater for DataArrays that uses scipy's map_coordinates.
+
+        This function supports the following:
+            - Higher-order interpolation for N-D arrays
+            - Definable extrapolation methods for N-D arrays
+            - Smart support for unitary dimensions (i.e. it doesn't barf)
+            - Support for additional, uninterpolated dimensions
+            - Real or complex data
+
+        The data to be interpolated must be regularly gridded - the underlying coordinates must all have a single dimension.
+        The requested coordinates (`coords_kwargs`) may be regularly gridded or irregularly grided.
+
+        Parameters
+        ----------
+        da : xr.DataArray
+            Data to be interpolated. Underlying coordinates for `da` must be one dimensional (i.e. regularly gridded).
+            `da` may be either real or complex, and it may have unitary dimensions as well as extra dimensions.
+        kwargs_map : dict, opt
+            Settings passed directly to map_coordinates. The default settings are:
+                order=3
+                mode="nearest"
+                prefilter=True
+        coords_kwargs : dict of ndarray or xr.DataArray
+            Each coordinate may either be 1-D or N-D. However if it is N-D, the shape of the other dimensions must match
+            the shape of the other coordinates in `coords_kwargs`.
+
+        Returns
+        -------
+        da_result : xr.DataArray
+            Resulting shape will be the `da`'s shape with the specified dimensions matching the lengths of the coordinates
+            in `coords_kwargs`.
+            dtype will be identical to `da`
+
+        """
 
         # Default arguments for map_coordinates
         default_map = dict(order=3, mode="nearest", prefilter=True)
@@ -195,46 +229,3 @@ class XmapCoordinates:
             da_result = da_result.transpose(*dims)
 
         return da_result
-
-
-def xmap_coordinates(
-    da: xr.DataArray, da_output: Optional[xr.DataArray] = None, kwargs_map=None, **coords_kwargs
-) -> xr.DataArray:
-    """Generic interpolater for DataArrays that uses scipy's map_coordinates.
-
-    This function supports the following:
-        - Higher-order interpolation for N-D arrays
-        - Definable extrapolation methods for N-D arrays
-        - Smart support for unitary dimensions (i.e. it doesn't barf)
-        - Support for additional, uninterpolated dimensions
-        - Real or complex data
-
-    The data to be interpolated must be regularly gridded - the underlying coordinates must all have a single dimension.
-    The requested coordinates (`coords_kwargs`) may be regularly gridded or irregularly grided.
-
-    Parameters
-    ----------
-    da : xr.DataArray
-        Data to be interpolated. Underlying coordinates for `da` must be one dimensional (i.e. regularly gridded).
-        `da` may be either real or complex, and it may have unitary dimensions as well as extra dimensions.
-    da_output : xr.DataArray, optional
-
-    kwargs_map : dict, opt
-        Settings passed directly to map_coordinates. The default settings are:
-            order=3
-            mode="nearest"
-            prefilter=True
-    coords_kwargs : dict of ndarray or xr.DataArray
-        Each coordinate may either be 1-D or N-D. However if it is N-D, the shape of the other dimensions must match
-        the shape of the other coordinates in `coords_kwargs`.
-
-    Returns
-    -------
-    da_result : xr.DataArray
-        Resulting shape will be the `da`'s shape with the specified dimensions matching the lengths of the coordinates
-        in `coords_kwargs`.
-        dtype will be identical to `da`
-
-    """
-
-    pass
